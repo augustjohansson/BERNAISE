@@ -10,6 +10,7 @@ Usage:
 python generate_mesh.py mesh={mesh generating function} [+optional arguments]
 
 """
+import h5py
 import mshr  # must be imported before dolfin!
 import dolfin as df
 import numpy as np
@@ -24,7 +25,6 @@ from common import parse_command_line, info, info_on_red, \
 from mpi4py.MPI import COMM_WORLD
 import meshpy.triangle as tri
 from utilities.plot import plot_edges, plot_faces
-import h5py
 from utilities import get_methods, get_help
 
 
