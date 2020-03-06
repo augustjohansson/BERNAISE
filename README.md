@@ -69,3 +69,16 @@ The solver is described and documented in [our recent paper](https://doi.org/10.
 ### Contributors
 * Asger Bolet
 * Gaute Linga
+
+### Docker usage
+To use the docker file, do something like
+~~~
+cd docker
+docker build . --tag=bernaise-image
+cd ..
+docker run -ti --name bernaise -v $(pwd):/home/fenics/shared b
+~~~
+You can remove the container by
+~~~
+docker rm bernaise
+~~~
