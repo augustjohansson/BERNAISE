@@ -76,7 +76,7 @@ To use the docker file, do something like
 cd docker
 docker build . --tag=bernaise-image
 cd ..
-docker run -ti --name bernaise -v $(pwd):/home/fenics/shared b
+docker run -ti --name bernaise -v $(pwd):/home/fenics/shared bernaise-image
 ~~~
 You can remove the container by
 ~~~
