@@ -8,7 +8,8 @@ h5py \
 scikit-image \
 tabulate \
 meshpy \
-scipy
+scipy \
+ipdb
 
 RUN git clone https://github.com/mikaem/fenicstools.git && \
 cd fenicstools && \
