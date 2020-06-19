@@ -58,6 +58,7 @@ parameters = dict(
     enable_PF=True,
     enable_EC=True,
     enable_NS=True,
+    enable_S=False,
     save_intv=5,
     checkpoint_intv=50,
     stat_intv=5,
