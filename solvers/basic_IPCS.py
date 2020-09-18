@@ -280,7 +280,6 @@ def solve(tstep, w_, w_1, w_tmp, solvers,
         bcs_u = solvers["NSu"]["bcs"]
 
         while du > tol and i_iter < max_num_iterations:
-            print(du[0])
             i_iter += 1
             du[0] = 0.
             # Step 1: Tentative velocity
