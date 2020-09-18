@@ -30,10 +30,13 @@ from . import __all__
 
 def get_subproblems(base_elements, solutes,
                     p_lagrange,
-                    enable_NS, enable_PF, enable_EC,
+                    enable_S, enable_NS, enable_PF, enable_EC,
                     **namespace):
     """ Returns dict of subproblems the solver splits the problem into. """
     subproblems = dict()
+    if enable_S:
+        subproblems["S"] = [dict(name="u", element="u"),
+                            dict(name="p", element="p")]
     if enable_NS:
         subproblems["NS"] = [dict(name="u", element="u"),
                              dict(name="p", element="p")]
@@ -55,7 +58,7 @@ def setup(mesh, test_functions, trial_functions,
           dirichlet_bcs, neumann_bcs, boundary_to_mark,
           permittivity, density, viscosity,
           solutes,
-          enable_PF, enable_EC, enable_NS,
+          enable_PF, enable_EC, enable_NS, enable_S,
           surface_tension, dt, interface_thickness,
           grav_const,
           grav_dir,
@@ -77,11 +80,22 @@ def setup(mesh, test_functions, trial_functions,
     eps = interface_thickness
     fric = df.Constant(friction_coeff)
     u_comoving = df.Constant(tuple(comoving_velocity[:dim]))
-    
-    # Navier-Stokes
+
     u_ = p_ = None
     u_1 = p_1 = None
     p0 = q0 = p0_ = p0_1 = None
+
+    # Stokes
+    if enable_S:
+        u, p = trial_functions["S"][:2]
+        v, q = test_functions["S"][:2]
+
+        up_ = df.split(w_["S"])
+        up_1 = df.split(w_1["S"])
+        u_, p_ = up_[:2]
+        u_1, p_1 = up_1[:2]
+
+    # Navier-Stokes
     if enable_NS:
         u, p = trial_functions["NS"][:2]
         v, q = test_functions["NS"][:2]
@@ -195,7 +209,64 @@ def setup(mesh, test_functions, trial_functions,
                                  use_pressure_stabilization,
                                  p_lagrange,
                                  q_rhs)
+    if enable_S:
+        solvers["S"] = setup_S(w_["S"], u, p, v, q, p0, q0,
+                               dx, ds, normal,
+                               dirichlet_bcs["S"], neumann_bcs,
+                               boundary_to_mark,
+                               u_1, phi_flt_,
+                               rho_, rho_1, g_, M_, mu_, rho_e_,
+                               c_, V_,
+                               c_1, V_1,
+                               dbeta, solutes,
+                               per_tau, drho, sigma_bar, eps, dveps,
+                               grav, fric,
+                               u_comoving,
+                               enable_PF, enable_EC,
+                               use_iterative_solvers,
+                               use_pressure_stabilization,
+                               p_lagrange,
+                               q_rhs)
+
     return dict(solvers=solvers)
+
+
+def setup_S(w_S, u, p, v, q, p0, q0,
+            dx, ds, normal,
+            dirichlet_bcs, neumann_bcs, boundary_to_mark,
+            u_1, phi_, rho_, rho_1, g_, M_, mu_, rho_e_,
+            c_, V_,
+            c_1, V_1,
+            dbeta, solutes,
+            per_tau, drho, sigma_bar, eps, dveps, grav, fric,
+            u_comoving,
+            enable_PF, enable_EC,
+            use_iterative_solvers, use_pressure_stabilization,
+            p_lagrange,
+            q_rhs):
+    """ Set up Stokes subproblem """
+    F = (
+        per_tau * rho_1 * df.dot(u - u_1, v) * dx
+        + mu_*df.inner(df.grad(u), df.grad(v)) * dx
+        - p * df.div(v) * dx
+        + q * df.div(u) * dx
+        - rho_*df.dot(grav, v) * dx
+    )
+
+    print("Linear system size", w_S.function_space().dim())
+
+
+    a, L = df.system(F)
+    problem = df.LinearVariationalProblem(a, L, w_S, dirichlet_bcs)
+    solver = df.LinearVariationalSolver(problem)
+
+    solver.parameters["linear_solver"] = "mumps"
+
+    if use_iterative_solvers:
+        solver.parameters["linear_solver"] = "gmres"
+        solver.parameters["preconditioner"] = "amg"
+
+    return solver
 
 
 def setup_NS(w_NS, u, p, v, q, p0, q0,
@@ -269,12 +340,14 @@ def setup_NS(w_NS, u, p, v, q, p0, q0,
 
     a, L = df.lhs(F), df.rhs(F)
 
+
+
     problem = df.LinearVariationalProblem(a, L, w_NS, dirichlet_bcs)
     solver = df.LinearVariationalSolver(problem)
 
     if use_iterative_solvers and use_pressure_stabilization:
-        solver.parameters["linear_solver"] = "gmres"
-        #solver.parameters["preconditioner"] = "jacobi"
+        solver.parameters["linear_solver"] = "minres"
+        solver.parameters["preconditioner"] = "amg"
         #solver.parameters["preconditioner"] = "ilu"
 
     return solver
@@ -316,7 +389,7 @@ def setup_PF(w_PF, phi, g, psi, h,
         F_g += sigma_bar*costheta*fw_prime*h*ds(
             boundary_to_mark[boundary_name])
 
-    if "phi" in q_rhs:       
+    if "phi" in q_rhs:
         F_phi += -q_rhs["phi"]*psi*dx
 
     F = F_phi + F_g
@@ -384,14 +457,15 @@ def setup_EC(w_EC, c, V, b, U, rho_e,
     return solver
 
 
-def solve(w_, solvers, enable_PF, enable_EC, enable_NS,
+def solve(w_, solvers, enable_PF, enable_EC, enable_NS, enable_S,
           freeze_NSPF, **namespace):
     """ Solve equations. """
     timer_outer = df.Timer("Solve system")
-    for subproblem, enable in zip(["PF", "EC", "NS"],
+    for subproblem, enable in zip(["PF", "EC", "NS", "S"],
                                   [enable_PF and not freeze_NSPF,
                                    enable_EC,
-                                   enable_NS and not freeze_NSPF]):
+                                   enable_NS and not freeze_NSPF,
+                                   enable_S]):
         if enable:
             timer_inner = df.Timer("Solve subproblem " + subproblem)
             mpi_barrier()
@@ -402,7 +476,7 @@ def solve(w_, solvers, enable_PF, enable_EC, enable_NS,
 
 
 def update(t, dt, w_, w_1, bcs, bcs_pointwise,
-           enable_PF, enable_EC, enable_NS, q_rhs,
+           enable_PF, enable_EC, enable_NS, enable_S, q_rhs,
            freeze_NSPF, **namespace):
     """ Update work variables at end of timestep. """
     # Update the time-dependent source terms
@@ -415,10 +489,11 @@ def update(t, dt, w_, w_1, bcs, bcs_pointwise,
                 bc.value.t = t+dt
 
     # Update fields
-    for subproblem, enable in zip(["PF", "EC", "NS"],
+    for subproblem, enable in zip(["PF", "EC", "NS", "S"],
                                   [enable_PF and not freeze_NSPF,
                                    enable_EC,
-                                   enable_NS and not freeze_NSPF]):
+                                   enable_NS and not freeze_NSPF,
+                                   enable_S]):
         if enable:
             w_1[subproblem].assign(w_[subproblem])
 
@@ -518,6 +593,11 @@ def discrete_energy(x_, solutes, density, permittivity,
                  for solute in solutes] + ["E_V"])
         return E_list
 
+    if enable_S:
+        rho = density[0]
+        veps = permittivity[0]
+        u = x_["u"]
+
     if enable_NS:
         rho = density[0]
         veps = permittivity[0]
@@ -543,7 +623,7 @@ def discrete_energy(x_, solutes, density, permittivity,
             M_list.append(alpha(ci) + betai*ci)
 
     E_list = []
-    if enable_NS:
+    if enable_NS or enable_S:
         E_list.append(0.5*rho*df.dot(u, u))
     if enable_PF:
         E_list.append(sigma_bar/eps*pf_potential(phi)
