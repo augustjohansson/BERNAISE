@@ -41,9 +41,11 @@ class Fixed(GenericBC):
 
 
 class NoSlip(Fixed):
-    def __init__(self):
-        Fixed.__init__(self, (0., 0.))  # To be generalized for arbitrary dim.
-
+    def __init__(self, dim):
+        if dim == 2:
+            Fixed.__init__(self, (0., 0.))  # To be generalized for arbitrary dim.
+        else:
+            Fixed.__init__(self, (0.0, 0.0, 0.0))
 
 class FreeSlip(GenericBC):
     # Class for implementing free slip in a certain direction
